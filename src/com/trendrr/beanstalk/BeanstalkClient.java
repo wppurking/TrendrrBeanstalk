@@ -28,20 +28,6 @@ public class BeanstalkClient {
 	protected String tube;
 	
 	
-	
-	/**
-	 * these variables are only used in the pool
-	 */
-	Date inUseSince = null;
-	Date lastUsed = null;
-	
-	BeanstalkPool pool = null;
-	
-	
-	public static void main(String...strings) throws Exception{
-		
-	}
-	
 	public BeanstalkClient(BeanstalkConnection con) {
 		this.con = con;
 		this.inited = true;
@@ -57,25 +43,14 @@ public class BeanstalkClient {
 		this.tube = tube;
 	}
 	
-	public BeanstalkClient(String addr, int port, String tube, BeanstalkPool pool) {
-		this.addr = addr;
-		this.port = port;
-		this.tube = tube;
-		this.pool = pool;
-	}
-
 	/**
 	 * will return the connection to the pool, or close the underlying socket if this
 	 * did not come from a pool
 	 */
 	public void close() {
-		if (this.pool == null) {
-			if (this.con != null) {
-				this.con.close();
-			}
-			return;
+		if (this.con != null) {
+			this.con.close();
 		}
-		pool.done(this);
 	}
 	
 	private void init() throws BeanstalkException{
@@ -301,12 +276,7 @@ public class BeanstalkClient {
 			byte[] bytes = con.readBytes(numBytes);
 //			log.info("GOT TASK: " + new String(bytes));
 			
-			BeanstalkJob job = new BeanstalkJob();
-			job.setData(bytes);
-			job.setId(id);
-			job.setClient(this);
-			return job;	
-			
+			return new BeanstalkJob(id, bytes);
 		} catch (BeanstalkDisconnectedException x) {
 			this.reap = true; //reap that shit..
 			throw x;
