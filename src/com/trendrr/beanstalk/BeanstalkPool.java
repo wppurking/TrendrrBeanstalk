@@ -134,7 +134,7 @@ public class BeanstalkPool {
 		for (BeanstalkClient c : toRemove) {
 			log.debug("REAPING Client: " + c);
 			this.clients.remove(c);
-			// don't close client
+			c.close();
 		}
 		if (returnClient != null) {
 			return returnClient;
