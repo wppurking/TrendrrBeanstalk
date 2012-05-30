@@ -236,8 +236,7 @@ public class BeanstalkClient {
 
 	/**
 	 * Reserves a job from the queue.
-	 * @param timeoutSeconds The number of seconds to wait for a job. Null if a job should be reserved
-	 *   only if immediately available.
+	 * @param timeoutSeconds The number of seconds to wait for a job. Null if it should wait until a job is available
 	 * @return The head of the queue, or null if the specified timeout elapses before a job is available.
 	 * @throws BeanstalkException If an unexpected response is received from the server, or other unexpected
 	 * 	 problem occurs.
