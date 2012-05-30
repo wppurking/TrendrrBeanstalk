@@ -5,7 +5,6 @@ releases
 target
 tmp
 bin
-.project
 .settings
 out
 *.ipr
