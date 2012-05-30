@@ -29,7 +29,7 @@ public class Example {
 	public static void main(String[] args) {
 		try {
 			//clientExample();
-		    pooledExample();
+		    pooledExample2();
 		} catch (BeanstalkException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -67,4 +67,23 @@ public class Example {
     		client.close();  // returns the connection to the pool
 		}
 	}
+
+    public static void pooledExample2() throws BeanstalkException {
+        BeanstalkPool pool = new BeanstalkPool("localhost", PORT, 30, // poolsize
+            "example" // tube to use
+        );
+
+        BeanstalkClient client = pool.getClient();
+        // log.info("Putting a job");
+        log.info(client.tubeStats());
+        for (int i = 0; i < 5; i++) {
+            byte[] data = new byte[200];
+            client.put(1l, 0, 5000, data);
+        }
+        BeanstalkJob job = client.reserve(60);
+        log.info("GOt job: " + new String(job.getData()));
+        client.deleteJob(job);
+        client.close(); // returns the connection to the pool
+
+    }
 }

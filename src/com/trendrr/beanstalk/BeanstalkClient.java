@@ -176,7 +176,6 @@ public class BeanstalkClient {
 	public long put(long priority, int delay, int ttr, byte[] data) throws BeanstalkException{
 		try {			
 			this.init();
-			Date start = new Date();
 			String command = "put " + priority + " " + delay + " " + ttr + " " + data.length + "\r\n";
 //			log.info(command);
 			
