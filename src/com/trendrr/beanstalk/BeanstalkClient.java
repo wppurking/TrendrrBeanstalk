@@ -3,11 +3,12 @@
  */
 package com.trendrr.beanstalk;
 
+import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
-import java.io.ByteArrayOutputStream;
-import java.util.Date;
 
 //import com.trendrr.common.DynMap;
 
@@ -134,7 +135,34 @@ public class BeanstalkClient {
 	public String tubeStats() throws BeanstalkException {
 		return this.tubeStats(this.tube);
 	}
-	
+	 
+    public List<String> listTubes() throws BeanstalkException {
+        try {
+            this.init();
+            String command = "list-tubes\r\n";
+            con.write(command);
+            String line = con.readControlResponse();
+            if (!line.startsWith("OK")) {
+                throw new BeanstalkException(line);
+            }
+            int numBytes = Integer.parseInt(line.split(" ")[1]);
+            String response = new String(con.readBytes(numBytes));
+            // log.info(response);
+            String lines[] = response.split("\\n");
+            List<String> result = new ArrayList<String>();
+            // remove "- "
+            for (String tube : lines) {
+                if (tube.startsWith("- ")) {
+                    result.add(tube.substring(2));
+                }
+            }
+            return result;
+        } catch (BeanstalkDisconnectedException x) {
+            this.reap = true; // reap that shit..
+            throw x;
+        }
+    }
+	 
 	public String tubeStats(String tube) throws BeanstalkException {
 		try {			
 			this.init();
