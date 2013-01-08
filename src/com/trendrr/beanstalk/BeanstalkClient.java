@@ -3,11 +3,12 @@
  */
 package com.trendrr.beanstalk;
 
+import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
-import java.io.ByteArrayOutputStream;
-import java.util.Date;
 
 //import com.trendrr.common.DynMap;
 
@@ -28,20 +29,6 @@ public class BeanstalkClient {
 	protected String tube;
 	
 	
-	
-	/**
-	 * these variables are only used in the pool
-	 */
-	Date inUseSince = null;
-	Date lastUsed = null;
-	
-	BeanstalkPool pool = null;
-	
-	
-	public static void main(String...strings) throws Exception{
-		
-	}
-	
 	public BeanstalkClient(BeanstalkConnection con) {
 		this.con = con;
 		this.inited = true;
@@ -57,25 +44,14 @@ public class BeanstalkClient {
 		this.tube = tube;
 	}
 	
-	public BeanstalkClient(String addr, int port, String tube, BeanstalkPool pool) {
-		this.addr = addr;
-		this.port = port;
-		this.tube = tube;
-		this.pool = pool;
-	}
-
 	/**
 	 * will return the connection to the pool, or close the underlying socket if this
 	 * did not come from a pool
 	 */
 	public void close() {
-		if (this.pool == null) {
-			if (this.con != null) {
-				this.con.close();
-			}
-			return;
+		if (this.con != null) {
+			this.con.close();
 		}
-		pool.done(this);
 	}
 	
 	private void init() throws BeanstalkException{
@@ -159,7 +135,34 @@ public class BeanstalkClient {
 	public String tubeStats() throws BeanstalkException {
 		return this.tubeStats(this.tube);
 	}
-	
+	 
+    public List<String> listTubes() throws BeanstalkException {
+        try {
+            this.init();
+            String command = "list-tubes\r\n";
+            con.write(command);
+            String line = con.readControlResponse();
+            if (!line.startsWith("OK")) {
+                throw new BeanstalkException(line);
+            }
+            int numBytes = Integer.parseInt(line.split(" ")[1]);
+            String response = new String(con.readBytes(numBytes));
+            // log.info(response);
+            String lines[] = response.split("\\n");
+            List<String> result = new ArrayList<String>();
+            // remove "- "
+            for (String tube : lines) {
+                if (tube.startsWith("- ")) {
+                    result.add(tube.substring(2));
+                }
+            }
+            return result;
+        } catch (BeanstalkDisconnectedException x) {
+            this.reap = true; // reap that shit..
+            throw x;
+        }
+    }
+	 
 	public String tubeStats(String tube) throws BeanstalkException {
 		try {			
 			this.init();
@@ -201,7 +204,6 @@ public class BeanstalkClient {
 	public long put(long priority, int delay, int ttr, byte[] data) throws BeanstalkException{
 		try {			
 			this.init();
-			Date start = new Date();
 			String command = "put " + priority + " " + delay + " " + ttr + " " + data.length + "\r\n";
 //			log.info(command);
 			
@@ -262,8 +264,7 @@ public class BeanstalkClient {
 
 	/**
 	 * Reserves a job from the queue.
-	 * @param timeoutSeconds The number of seconds to wait for a job. Null if a job should be reserved
-	 *   only if immediately available.
+	 * @param timeoutSeconds The number of seconds to wait for a job. Null if it should wait until a job is available
 	 * @return The head of the queue, or null if the specified timeout elapses before a job is available.
 	 * @throws BeanstalkException If an unexpected response is received from the server, or other unexpected
 	 * 	 problem occurs.
@@ -301,12 +302,7 @@ public class BeanstalkClient {
 			byte[] bytes = con.readBytes(numBytes);
 //			log.info("GOT TASK: " + new String(bytes));
 			
-			BeanstalkJob job = new BeanstalkJob();
-			job.setData(bytes);
-			job.setId(id);
-			job.setClient(this);
-			return job;	
-			
+			return new BeanstalkJob(id, bytes);
 		} catch (BeanstalkDisconnectedException x) {
 			this.reap = true; //reap that shit..
 			throw x;

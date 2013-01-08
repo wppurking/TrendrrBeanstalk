@@ -5,8 +5,6 @@ releases
 target
 tmp
 bin
-.classpath
-.project
 .settings
 out
 *.ipr

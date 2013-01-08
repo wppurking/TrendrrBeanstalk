@@ -20,23 +20,20 @@ import com.trendrr.beanstalk.BeanstalkPool;
  */
 public class Example {
 
-	protected static Log log = LogFactory.getLog(Example.class);
+	private static final int PORT = 11300;
+    protected static Log log = LogFactory.getLog(Example.class);
 
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		//Example usage for a 
-		
 		try {
-			clientExample();
+			//clientExample();
+		    pooledExample2();
 		} catch (BeanstalkException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
-		
-
 	}
 	
 	/**
@@ -44,7 +41,7 @@ public class Example {
 	 * @throws BeanstalkException 
 	 */
 	public static void clientExample() throws BeanstalkException {
-		BeanstalkClient client = new BeanstalkClient("localhost", 8010, "example");
+		BeanstalkClient client = new BeanstalkClient("localhost", PORT, "example");
 		log.info("Putting a job");
 		client.put(1l, 0, 5000, "this is some data".getBytes());
 		BeanstalkJob job = client.reserve(60);
@@ -55,18 +52,38 @@ public class Example {
 	
 	
 	public static void pooledExample()  throws BeanstalkException {
-		BeanstalkPool pool = new BeanstalkPool("localhost", 8010, 
+		BeanstalkPool pool = new BeanstalkPool("localhost", PORT, 
 				30, //poolsize 
 			"example" //tube to use
 		);
 		
-		BeanstalkClient client = pool.getClient();
-		
-		log.info("Putting a job");
-		client.put(1l, 0, 5000, "this is some data".getBytes());
-		BeanstalkJob job = client.reserve(60);
-		log.info("GOt job: " + job);
-		client.deleteJob(job);
-		client.close();  //returns the connection to the pool
+		for (int i = 0; i < 100; i++) {
+    		BeanstalkClient client = pool.getClient();
+    		//log.info("Putting a job");
+    		client.put(1l, 0, 5000, ("this is some data " + i).getBytes());
+    		BeanstalkJob job = client.reserve(60);
+    		log.info("GOt job: " + new String(job.getData()));
+    		client.deleteJob(job);
+    		client.close();  // returns the connection to the pool
+		}
 	}
+
+    public static void pooledExample2() throws BeanstalkException {
+        BeanstalkPool pool = new BeanstalkPool("localhost", PORT, 30, // poolsize
+            "example" // tube to use
+        );
+
+        BeanstalkClient client = pool.getClient();
+        // log.info("Putting a job");
+        log.info(client.tubeStats());
+        for (int i = 0; i < 5; i++) {
+            byte[] data = new byte[200];
+            client.put(1l, 0, 5000, data);
+        }
+        BeanstalkJob job = client.reserve(60);
+        log.info("GOt job: " + new String(job.getData()));
+        client.deleteJob(job);
+        client.close(); // returns the connection to the pool
+
+    }
 }
