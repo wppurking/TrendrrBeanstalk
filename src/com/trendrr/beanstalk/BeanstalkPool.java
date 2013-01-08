@@ -3,7 +3,6 @@
  */
 package com.trendrr.beanstalk;
 
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -17,18 +16,35 @@ import org.apache.commons.logging.LogFactory;
  */
 public class BeanstalkPool {
 
-	protected Log log = LogFactory.getLog(BeanstalkPool.class);
+	private static final long DEFAULT_MAX_USE_TIME = 20*60*1000; //max checkout time is 20 minutes.
+    private static final long DEFAULT_MAX_IDLE_TIME = 20*60*1000;
+
+    protected final Log log = LogFactory.getLog(BeanstalkPool.class);
 	
-	Set<BeanstalkClient> clients = new HashSet<BeanstalkClient>();
-	int maxClients = 30;
+	protected final Set<PoolClient> clients = new HashSet<PoolClient>();
+	private final int maxClients;
 	
-	long maxUseTime = 20*60*1000; //max checkout time is 20 minutes.
+	private final long maxUseTime; 
+	private final long maxIdleTime; //connection will be removed after no use.
 	
-	long maxIdleTime = 20*60*1000; //connection will be removed after no use.
-	
-	private String addr;
-	private int port;
-	private String tube = null;
+	private final String addr;
+	private final int port;
+	private final String tube;
+    
+    private class PoolClient extends BeanstalkClient {
+        private long inUseSince;
+        private long lastUsed;
+      
+        public PoolClient(String addr, int port, String tube) {
+            super(addr, port, tube);
+        }
+        
+        @Override
+        public void close() {
+            // mark client as unused
+            inUseSince = 0;   
+        }
+    }
 	
 	/**
 	 * setup a new pool.  
@@ -39,13 +55,19 @@ public class BeanstalkPool {
 	 * @param tube All operations for the client will work on the tube.
 	 */
 	public BeanstalkPool(String addr, int port, int maxPoolSize, String tube) {
-		this.addr = addr;
-		this.port = port;
-		this.maxClients = maxPoolSize;
-		this.tube = tube;
+	    this(addr, port, maxPoolSize, tube, DEFAULT_MAX_USE_TIME, DEFAULT_MAX_IDLE_TIME);
 	}
-
-	/**
+	
+	public BeanstalkPool(String addr, int port, int maxPoolSize, String tube, long  maxUseTime, long maxIdleTime) {
+	        this.addr = addr;
+	        this.port = port;
+	        this.maxClients = maxPoolSize;
+	        this.tube = tube;
+	        this.maxUseTime = maxUseTime;
+	        this.maxIdleTime = maxIdleTime;
+	}
+	
+    /**
 	 * setup a new pool.  
 	 * 
 	 * @param addr address of the beanstalkd server to connection to
@@ -71,75 +93,67 @@ public class BeanstalkPool {
 	 * 
 	 * @return
 	 */
-	public synchronized BeanstalkClient getClient() throws BeanstalkException{
+	public synchronized BeanstalkClient getClient() throws BeanstalkException {
 		/*
 		 * synchronized, but should be fast as the client initialization code happens lazily. 
 		 */
 		
-		Set<BeanstalkClient> toRemove = new HashSet<BeanstalkClient>();
+		Set<PoolClient> toRemove = new HashSet<PoolClient>();
 		
-		Date max = new Date(new Date().getTime() - this.maxUseTime);
-		Date maxIdle = new Date(new Date().getTime() - this.maxIdleTime);
+		long max = getCurrentTime() - this.maxUseTime;
+		long maxIdle = getCurrentTime() - this.maxIdleTime;
 		
 		BeanstalkClient returnClient = null;
-		try {
-			
-			/*
-			 * Here we iterate over all the clients and reap any that need reaping. 
-			 * TODO: we could restrict this to only loop over once every minute or so.
-			 * for now I don't see it being a huge problem.
-			 */
-			for (BeanstalkClient client : clients) {
-				
-				
-				if (client.inUseSince != null && client.inUseSince.before(max)) {
-					client.reap = true;
-				}	
-				if (client.lastUsed != null && client.lastUsed.before(maxIdle)) {
-					client.reap = true;
-				}
-				if (client.con != null && ! client.con.isOpen()) {
-					client.reap = true;
-				}
-				
-				
-				if (client.reap) {
-					toRemove.add(client);
-				} else if (returnClient == null && client.inUseSince == null) {
-					//found the useable client.
-					client.inUseSince = new Date();
-					client.lastUsed = new Date(); //reap old connections
-					returnClient = client;
-				}
+		
+		/*
+		 * Here we iterate over all the clients and reap any that need reaping. 
+		 * TODO: we could restrict this to only loop over once every minute or so.
+		 * for now I don't see it being a huge problem.
+		 */
+		for (PoolClient client : clients) {
+			if (client.inUseSince != 0 && client.inUseSince < max) {
+				client.reap = true;
+			}	
+			if (client.lastUsed != 0 && client.lastUsed < maxIdle) {
+				client.reap = true;
 			}
-		} finally {
-			for (BeanstalkClient c : toRemove) {
-				log.debug("REAPING Client: " + c);
-				c.pool = null;
-				this.clients.remove(c);
-				c.close();
+			if (client.con != null && ! client.con.isOpen()) {
+				client.reap = true;
+			}
+			
+			
+			if (client.reap) {
+				toRemove.add(client);
+			} else if (returnClient == null && client.inUseSince == 0) {
+				//found the useable client.
+				client.inUseSince = getCurrentTime();
+				client.lastUsed = getCurrentTime(); //reap old connections
+				returnClient = client;
 			}
 		}
-		if (returnClient != null)
+		for (BeanstalkClient c : toRemove) {
+			log.debug("REAPING Client: " + c);
+			this.clients.remove(c);
+			c.close();
+		}
+		if (returnClient != null) {
 			return returnClient;
+		}
 		
 		//add a new client if they are all closed.
 		if (this.maxClients > 0 && this.clients.size() >= this.maxClients) {
 			log.error("Too many clients in use!");	
 			throw new BeanstalkException("To many clients in use");
 		}
-		BeanstalkClient client = new BeanstalkClient(this.addr, this.port, this.tube, this);
+		PoolClient client = new PoolClient(this.addr, this.port, this.tube);
 	
 		this.clients.add(client);
-		client.inUseSince = new Date();
+		client.inUseSince = getCurrentTime();
+		client.lastUsed = getCurrentTime();
 		return client;
 	}
-	
-	/**
-	 * returns a client to the pool
-	 * @param client
-	 */
-	public synchronized void done(BeanstalkClient client) {
-		client.inUseSince = null;
-	}
+
+    protected long getCurrentTime() {
+        return System.currentTimeMillis();
+    }
 }

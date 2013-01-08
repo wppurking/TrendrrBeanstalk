@@ -23,7 +23,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class BeanstalkConnection {
 
-	protected Log log = LogFactory.getLog(BeanstalkConnection.class);
+	protected final Log log = LogFactory.getLog(BeanstalkConnection.class);
 	
 	private SocketChannel channel;
 	private ByteArrayOutputStream outbuf = new ByteArrayOutputStream();
